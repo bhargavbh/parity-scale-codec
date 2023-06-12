@@ -1952,3 +1952,66 @@ mod tests {
 		assert_eq!(RangeInclusive::decode(&mut &range_inclusive_bytes[..]), Ok(range_inclusive));
 	}
 }
+
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_u32_encoded_as_expected() {
+		let value: u32 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u32::decode(&mut &encoded[..]).unwrap(), value);
+	}
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_u64_encoded_as_expected() {
+		let value: u64 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u64::decode(&mut &encoded[..]).unwrap(), value);
+	}
+	
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_u128_encoded_as_expected() {
+		let value: u128 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u128::decode(&mut &encoded[..]).unwrap(), value);
+	}
+	
+// implement arbitrary trait for string
+// #[cfg(kani)]
+// #[kani::proof]
+// fn string_encoded_as_expected() {
+// 	let value: String = kani::any();
+// 	let encoded = value.encode();
+// 	assert_eq!(<String>::decode(&mut &encoded[..]).unwrap(), value);
+// }
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_f32_encoded_as_expected() {
+		let value: f32 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(f32::decode(&mut &encoded[..]).unwrap(), value);
+	}
+
+
+	#[test]
+	fn kani_concrete_playback_kani_f32_encoded_as_expected_11885829498631931113() {
+		let concrete_vals: Vec<Vec<u8>> = vec![
+			// +NaN
+			vec![8, 0, 128, 127],
+		];
+		kani::concrete_playback_run(concrete_vals, kani_f32_encoded_as_expected);
+	}
+
+	#[test]
+	fn kani_concrete_playback_kani_f32_encoded_as_expected_118858294986319311131() {
+		let value = f32::NAN;
+		println!("original value is {}", value);
+		let encoded = value.encode();
+		let decoded = f32::decode(&mut &encoded[..]).unwrap();
+		println!("decoded value is {}", decoded);
+		assert_eq!(decoded, value);
+	}

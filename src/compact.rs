@@ -938,3 +938,84 @@ mod tests {
 		u128 : u128_roundtrip
 	}
 }
+
+
+#[cfg(kani)]
+#[kani::proof]
+	fn compact_128_encoding_proof() {
+		let n: u128 = kani::any();
+		let encoded = Compact(n as u128).encode();
+		//assert_eq!(encoded.len(), l);
+		assert_eq!(Compact::compact_len(&n), encoded.len());
+		assert_eq!(<Compact<u128>>::decode(&mut &encoded[..]).unwrap().0, n);
+		
+	}
+
+
+// works for u8
+	#[cfg(kani)]
+	#[kani::proof]
+		fn compact_8_encoding_proof() {
+			let n: u8 = kani::any();
+			let encoded = Compact(n as u8).encode();
+			//assert_eq!(encoded.len(), l);
+			assert_eq!(Compact::compact_len(&n), encoded.len());
+			assert_eq!(<Compact<u8>>::decode(&mut &encoded[..]).unwrap().0, n);
+			
+		}
+
+// works for u16
+	#[cfg(kani)]
+	#[kani::proof]
+		fn compact_16_encoding_proof() {
+			let n: u16 = kani::any();
+			let encoded = Compact(n as u16).encode();
+			//assert_eq!(encoded.len(), l);
+			assert_eq!(Compact::compact_len(&n), encoded.len());
+			assert_eq!(<Compact<u16>>::decode(&mut &encoded[..]).unwrap().0, n);
+				
+		}
+
+// // works for u32
+	#[cfg(kani)]
+	#[kani::proof]
+		fn compact_32_encoding_proof() {
+			let n: u32 = kani::any();
+			let encoded = Compact(n as u32).encode();
+			//assert_eq!(encoded.len(), l);
+			assert_eq!(Compact::compact_len(&n), encoded.len());
+			assert_eq!(<Compact<u32>>::decode(&mut &encoded[..]).unwrap().0, n);
+				
+	}
+
+
+// // works for u64
+	#[cfg(kani)]
+	#[kani::proof]
+	#[kani::unwind(10)] //bytes_needed in the loop for encoding is bounded by 8
+		fn compact_64_encoding_proof() {
+			let n: u64 = kani::any();
+			let encoded = Compact(n as u64).encode();
+			//assert_eq!(encoded.len(), l);
+			assert_eq!(Compact::compact_len(&n), encoded.len());
+			assert_eq!(<Compact<u64>>::decode(&mut &encoded[..]).unwrap().0, n);
+				
+		}
+
+
+// //SUMMARY:
+// // ** 0 of 1175 failed (17 unreachable)
+// // VERIFICATION:- SUCCESSFUL
+// // Verification Time: 9036.174s
+
+	#[cfg(kani)]
+	#[kani::proof]
+	#[kani::unwind(17)] //bytes_needed in the loop for encoding is bounded by 8
+		fn compact_128_encoding__bounded_loop_proof() {
+			let n: u128 = kani::any();
+			let encoded = Compact(n as u128).encode();
+			//assert_eq!(encoded.len(), l);
+			assert_eq!(Compact::compact_len(&n), encoded.len());
+			assert_eq!(<Compact<u128>>::decode(&mut &encoded[..]).unwrap().0, n);
+					
+		}
