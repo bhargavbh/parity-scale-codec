@@ -46,9 +46,8 @@ macro_rules! impl_primitives {
 	};
 }
 
-impl_primitives!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, bool);
-
 impl_primitives!(
+	u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, bool,
 	NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroI8, NonZeroI16, NonZeroI32,
 	NonZeroI64, NonZeroI128
 );
@@ -66,6 +65,7 @@ macro_rules! impl_compact {
 }
 
 impl_compact!(
+	() => 0;
 	// github.com/paritytech/parity-scale-codec/blob/f0341dabb01aa9ff0548558abb6dcc5c31c669a1/src/compact.rs#L261
 	u8 => 2;
 	// github.com/paritytech/parity-scale-codec/blob/f0341dabb01aa9ff0548558abb6dcc5c31c669a1/src/compact.rs#L291

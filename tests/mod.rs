@@ -35,7 +35,7 @@ struct Struct<A, B, C> {
 struct StructWithPhantom {
 	pub a: u32,
 	pub b: u64,
-	_c: ::std::marker::PhantomData<u8>,
+	_c: std::marker::PhantomData<u8>,
 }
 
 type TestType = Struct<u32, u64, Vec<u8>>;
@@ -240,7 +240,7 @@ const U64_TEST_COMPACT_VALUES: &[(u64, usize)] = &[
 	(1 << 48, 8),
 	(1 << 56 - 1, 8),
 	(1 << 56, 9),
-	(u64::max_value(), 9),
+	(u64::MAX, 9),
 ];
 
 const U64_TEST_COMPACT_VALUES_FOR_ENUM: &[(u64, usize)] = &[
@@ -257,7 +257,7 @@ const U64_TEST_COMPACT_VALUES_FOR_ENUM: &[(u64, usize)] = &[
 	(1 << 48, 9),
 	(1 << 56 - 1, 9),
 	(1 << 56, 10),
-	(u64::max_value(), 10),
+	(u64::MAX, 10),
 ];
 
 #[test]
@@ -527,7 +527,7 @@ fn recursive_type() {
 #[test]
 fn crafted_input_for_vec_u8() {
 	assert_eq!(
-		Vec::<u8>::decode(&mut &Compact(u32::max_value()).encode()[..])
+		Vec::<u8>::decode(&mut &Compact(u32::MAX).encode()[..])
 			.err()
 			.unwrap()
 			.to_string(),
@@ -545,7 +545,7 @@ fn crafted_input_for_vec_t() {
 	};
 
 	assert_eq!(
-		Vec::<u32>::decode(&mut &Compact(u32::max_value()).encode()[..])
+		Vec::<u32>::decode(&mut &Compact(u32::MAX).encode()[..])
 			.err()
 			.unwrap()
 			.to_string(),
@@ -642,4 +642,251 @@ fn no_warning_for_deprecated() {
 		#[deprecated]
 		VariantB,
 	}
+}
+
+#[test]
+fn decoding_a_huge_array_inside_of_box_does_not_overflow_the_stack() {
+	let data = &[];
+	let _ = Box::<[u8; 100 * 1024 * 1024]>::decode(&mut data.as_slice());
+}
+
+#[test]
+fn decoding_a_huge_array_inside_of_rc_does_not_overflow_the_stack() {
+	let data = &[];
+	let _ = std::rc::Rc::<[u8; 100 * 1024 * 1024]>::decode(&mut data.as_slice());
+}
+
+#[test]
+fn decoding_a_huge_array_inside_of_arc_does_not_overflow_the_stack() {
+	let data = &[];
+	let _ = std::sync::Arc::<[u8; 100 * 1024 * 1024]>::decode(&mut data.as_slice());
+}
+
+#[test]
+fn decoding_a_huge_boxed_newtype_array_does_not_overflow_the_stack() {
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct HugeArrayNewtype([u8; 100 * 1024 * 1024]);
+
+	#[derive(DeriveDecode)]
+	struct HugeArrayNewtypeBox(Box<HugeArrayNewtype>);
+
+	let data = &[];
+	assert!(HugeArrayNewtypeBox::decode(&mut data.as_slice()).is_err());
+}
+
+#[test]
+fn decoding_two_indirectly_boxed_arrays_works() {
+	// This test will fail if the check for `#[repr(transparent)]` in the derive crate
+	// doesn't work when implementing `Decode::decode_into`.
+	#[derive(DeriveDecode)]
+	#[derive(PartialEq, Eq, Debug)]
+	struct SmallArrays([u8; 2], [u8; 2]);
+
+	#[derive(DeriveDecode)]
+	struct SmallArraysBox(Box<SmallArrays>);
+
+	let data = &[1, 2, 3, 4];
+	assert_eq!(*SmallArraysBox::decode(&mut data.as_slice()).unwrap().0, SmallArrays([1, 2], [3, 4]));
+}
+
+#[test]
+fn zero_sized_types_are_properly_decoded_in_a_transparent_boxed_struct() {
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct ZstTransparent;
+
+	#[derive(DeriveDecode)]
+	struct ZstNonTransparent;
+
+	struct ConsumeByte;
+
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct NewtypeWithZst {
+		_zst_1: ConsumeByte,
+		_zst_2: ZstTransparent,
+		_zst_3: ZstNonTransparent,
+		field: [u8; 1],
+		_zst_4: ConsumeByte
+	}
+
+	#[derive(DeriveDecode)]
+	struct NewtypeWithZstBox(Box<NewtypeWithZst>);
+
+	impl Decode for ConsumeByte {
+		fn decode<I: parity_scale_codec::Input>(input: &mut I) -> Result<Self, Error> {
+			let mut buffer = [0; 1];
+			input.read(&mut buffer).unwrap();
+			Ok(Self)
+		}
+	}
+
+	let data = &[1, 2, 3];
+	assert_eq!(NewtypeWithZst::decode(&mut data.as_slice()).unwrap().field, [2]);
+}
+
+#[test]
+fn boxed_zero_sized_newtype_with_everything_being_transparent_is_decoded_correctly() {
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct Zst;
+
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct NewtypeWithZst(Zst);
+
+	#[derive(DeriveDecode)]
+	#[repr(transparent)]
+	struct NewtypeWithZstBox(Box<NewtypeWithZst>);
+
+	let data = &[];
+	assert!(NewtypeWithZst::decode(&mut data.as_slice()).is_ok());
+}
+
+#[test]
+fn decoding_an_array_of_boxed_zero_sized_types_works() {
+	#[cfg(not(miri))]
+	const SIZE: usize = 100 * 1024 * 1024;
+
+	#[cfg(miri)]
+	const SIZE: usize = 1024;
+
+	let data = &[];
+	assert!(Box::<[(); SIZE]>::decode(&mut data.as_slice()).is_ok());
+}
+
+#[test]
+fn incomplete_decoding_of_an_array_drops_partially_read_elements_if_reading_fails() {
+	thread_local! {
+		pub static COUNTER: core::cell::Cell<usize> = core::cell::Cell::new(0);
+	}
+
+	#[derive(DeriveDecode)]
+	struct Foobar(u8);
+
+	impl Drop for Foobar {
+		fn drop(&mut self) {
+			COUNTER.with(|counter| {
+				counter.set(counter.get() + 1);
+			});
+		}
+	}
+
+	let data = &[1, 2, 3];
+	assert!(<[Foobar; 4]>::decode(&mut data.as_slice()).is_err());
+
+	COUNTER.with(|counter| {
+		assert_eq!(counter.get(), 3);
+	});
+}
+
+#[test]
+fn incomplete_decoding_of_an_array_drops_partially_read_elements_if_reading_panics() {
+	thread_local! {
+		pub static COUNTER: core::cell::Cell<usize> = core::cell::Cell::new(0);
+	}
+
+	struct Foobar(u8);
+
+	impl Decode for Foobar {
+		fn decode<I: parity_scale_codec::Input>(input: &mut I) -> Result<Self, Error> {
+			let mut buffer = [0; 1];
+			input.read(&mut buffer).unwrap();
+			Ok(Self(buffer[0]))
+		}
+	}
+
+	impl Drop for Foobar {
+		fn drop(&mut self) {
+			COUNTER.with(|counter| {
+				counter.set(counter.get() + 1);
+			});
+		}
+	}
+
+	let data = &[1, 2, 3];
+	let result = std::panic::catch_unwind(|| {
+		let _ = <[Foobar; 4]>::decode(&mut data.as_slice());
+	});
+
+	assert!(result.is_err());
+
+	COUNTER.with(|counter| {
+		assert_eq!(counter.get(), 3);
+	});
+}
+
+#[test]
+fn deserializing_of_big_recursively_nested_enum_works() {
+	#[derive(PartialEq, Eq, DeriveDecode, DeriveEncode)]
+	struct Data([u8; 1472]);
+
+	#[derive(PartialEq, Eq, DeriveDecode, DeriveEncode)]
+	enum Enum {
+		Nested(Vec<Enum>),
+		Data(Data),
+		Variant1,
+		Variant2,
+		Variant3,
+		Variant4,
+		Variant5,
+		Variant6,
+		Variant7,
+		Variant8,
+		Variant9,
+		Variant10,
+		Variant11,
+		Variant12,
+		Variant13,
+		Variant14,
+		Variant15,
+		Variant16,
+		Variant17,
+		Variant18,
+		Variant19,
+		Variant20,
+		Variant21,
+		Variant22,
+		Variant23,
+		Variant24,
+		Variant25,
+		Variant26,
+		Variant27,
+		Variant28,
+		Variant29,
+		Variant30,
+		Variant31,
+		Variant32,
+		Variant33,
+		Variant34,
+		Variant35,
+		Variant36,
+		Variant37,
+		Variant38,
+		Variant39,
+		Variant40,
+		Variant41,
+	}
+
+	fn gen_dummy_data(depth_remaining: usize) -> Enum {
+		let mut vec = vec![Enum::Data(Data([0; 1472]))];
+		if depth_remaining > 0 {
+			vec.push(gen_dummy_data(depth_remaining - 1));
+		}
+		Enum::Nested(vec)
+	}
+
+	let obj = gen_dummy_data(32);
+	let data = obj.encode();
+
+	// This should not overflow the stack.
+	let obj_d = Enum::decode(&mut &data[..]).unwrap();
+
+	// NOTE: Not using `assert_eq` since we don't want to print out such a big object if this fails.
+	assert!(obj == obj_d);
+
+	use parity_scale_codec::DecodeLimit;
+	let obj_d2 = Enum::decode_with_depth_limit(40, &mut &data[..]).unwrap();
+	assert!(obj == obj_d2);
 }

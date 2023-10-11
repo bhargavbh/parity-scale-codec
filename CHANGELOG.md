@@ -5,6 +5,52 @@ All notable changes to this crate are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.4] - 2023-07-14
+
+### Added
+
+- Now `#[derive(Encode)]` implements the `size_hint()` method for structures and enumerations.
+  This improves the performance of the `encode()` method by pre-allocating memory.
+
+## [3.6.3] - 2023-07-03
+
+### Fixed
+
+- Provide full path to elements from `::core` in `Decode` derivation (caused compilation error when 
+  `no-implicit-prelude` was used).
+
+## [3.6.2] - 2023-06-30
+
+### Fixed
+
+- Trying to deserialize a boxed newtype containing a big array won't overflow the stack anymore.
+
+## [3.6.1] - 2023-06-19
+
+### Fixed
+
+- Deriving `Decode` will not trigger clippy warnings anymore
+
+## [3.6.0] - 2023-06-15
+
+### Added
+
+- Added `Decode::decode_into` to allow deserializing into unitialized memory.
+- Added a `DecodeFinished` type to be used with `Decode::decode_into`.
+
+### Fixed
+
+- Trying to deserialize a big boxed array (e.g. `Box<[u8; 1024 * 1024 * 1024]>`) won't overflow the stack anymore.
+- Trying to deserialize big nested enums with many variants won't overflow the stack anymore.
+- Elements of partially read arrays will now be properly dropped if the whole array wasn't decoded.
+
+### Changed
+
+- The derive macros will now be reexported only when the `derive` feature is enabled,
+  as opposed to how it was previously where enabling `parity-scale-codec-derive` would suffice.
+- The `max-encoded-len` feature won't automatically enable the derive macros nor pull in the
+  `parity-scale-codec-derive` dependency.
+
 ## [3.5.0]
 
 ### Added

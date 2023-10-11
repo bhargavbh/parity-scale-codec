@@ -78,12 +78,12 @@ fn wrap_with_dummy_const(
 /// # use parity_scale_codec::{Encode as _, HasCompact};
 /// #[derive(Encode)]
 /// struct StructType {
-/// 		#[codec(skip)]
-/// 		a: u32,
-/// 		#[codec(compact)]
-/// 		b: u32,
-/// 		#[codec(encoded_as = "<u32 as HasCompact>::Type")]
-/// 		c: u32,
+///     #[codec(skip)]
+///     a: u32,
+///     #[codec(compact)]
+///     b: u32,
+///     #[codec(encoded_as = "<u32 as HasCompact>::Type")]
+///     c: u32,
 /// }
 /// ```
 ///
@@ -92,9 +92,9 @@ fn wrap_with_dummy_const(
 /// The variable is encoded with one byte for the variant and then the variant struct encoding.
 /// The variant number is:
 /// * if variant has attribute: `#[codec(index = "$n")]` then n
-/// * else if variant has discrimant (like 3 in `enum T { A = 3 }`) then the discrimant.
+/// * else if variant has discriminant (like 3 in `enum T { A = 3 }`) then the discriminant.
 /// * else its position in the variant set, excluding skipped variants, but including variant with
-/// discrimant or attribute. Warning this position does collision with discrimant or attribute
+/// discriminant or attribute. Warning this position does collision with discriminant or attribute
 /// index.
 ///
 /// variant attributes:
@@ -108,12 +108,12 @@ fn wrap_with_dummy_const(
 /// # use parity_scale_codec::Encode as _;
 /// #[derive(Encode)]
 /// enum EnumType {
-/// 	#[codec(index = 15)]
-/// 	A,
-/// 	#[codec(skip)]
-/// 	B,
-/// 	C = 3,
-/// 	D,
+///     #[codec(index = 15)]
+///     A,
+///     #[codec(skip)]
+///     B,
+///     C = 3,
+///     D,
 /// }
 ///
 /// assert_eq!(EnumType::A.encode(), vec![15]);
@@ -208,6 +208,26 @@ pub fn decode_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 	let decoding =
 		decode::quote(&input.data, name, &quote!(#ty_gen_turbofish), &input_, &crate_path);
 
+	let decode_into_body = decode::quote_decode_into(
+		&input.data,
+		&crate_path,
+		&input_,
+		&input.attrs
+	);
+
+	let impl_decode_into = if let Some(body) = decode_into_body {
+		quote! {
+			fn decode_into<__CodecInputEdqy: #crate_path::Input>(
+				#input_: &mut __CodecInputEdqy,
+				dst_: &mut ::core::mem::MaybeUninit<Self>,
+			) -> ::core::result::Result<#crate_path::DecodeFinished, #crate_path::Error> {
+				#body
+			}
+		}
+	} else {
+		quote! {}
+	};
+
 	let impl_block = quote! {
 		#[automatically_derived]
 		impl #impl_generics #crate_path::Decode for #name #ty_generics #where_clause {
@@ -216,6 +236,8 @@ pub fn decode_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 			) -> ::core::result::Result<Self, #crate_path::Error> {
 				#decoding
 			}
+
+			#impl_decode_into
 		}
 	};
 
@@ -282,7 +304,7 @@ pub fn compact_as_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 			Fields::Named(ref fields) if utils::filter_skip_named(fields).count() == 1 => {
 				let recurse = fields.named.iter().map(|f| {
 					let name_ident = &f.ident;
-					let val_or_default = val_or_default(&f);
+					let val_or_default = val_or_default(f);
 					quote_spanned!(f.span()=> #name_ident: #val_or_default)
 				});
 				let field = utils::filter_skip_named(fields).next().expect("Exactly one field");
@@ -292,7 +314,7 @@ pub fn compact_as_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 			},
 			Fields::Unnamed(ref fields) if utils::filter_skip_unnamed(fields).count() == 1 => {
 				let recurse = fields.unnamed.iter().enumerate().map(|(_, f)| {
-					let val_or_default = val_or_default(&f);
+					let val_or_default = val_or_default(f);
 					quote_spanned!(f.span()=> #val_or_default)
 				});
 				let (id, field) =

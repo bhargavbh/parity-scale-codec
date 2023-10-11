@@ -1,6 +1,12 @@
 # .gitlab-ci.yml
 #
 
+include:
+  - project: parity/infrastructure/ci_cd/shared
+    ref: main
+    file: /common/ci-unified.yml  
+
+
 stages:
   - check
   - test
@@ -10,7 +16,7 @@ variables:
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       "100"
   CARGO_INCREMENTAL:               0
-  CI_IMAGE:                        "paritytech/parity-scale-codec:production"
+  CI_IMAGE:                        !reference [.ci-unified, variables, CI_IMAGE]
 
 default:
   cache:                           {}
@@ -41,6 +47,15 @@ default:
     - linux-docker-vm-c2
 
 #### stage:                        check
+
+check-clippy:
+  stage:                           check
+  <<:                              *docker-env
+  script:
+    - rustup component add clippy --toolchain stable-x86_64-unknown-linux-gnu
+    - time cargo +stable clippy --locked -- -Dwarnings
+    - time cargo +stable clippy --locked -p parity-scale-codec-derive -- -Dwarnings
+    - time cargo +stable clippy --locked --test clippy -- -Dwarnings
 
 check-rust-stable-no_derive_no_std:
   stage:                           check

@@ -71,8 +71,15 @@ pub fn quote(
 				);
 
 				quote_spanned! { v.span() =>
+					#[allow(clippy::unnecessary_cast)]
 					__codec_x_edqy if __codec_x_edqy == #index as ::core::primitive::u8 => {
-						#create
+						// NOTE: This lambda is necessary to work around an upstream bug
+						// where each extra branch results in excessive stack usage:
+						//   https://github.com/rust-lang/rust/issues/34283
+						#[allow(clippy::redundant_closure_call)]
+						return (move || {
+							#create
+						})();
 					},
 				}
 			});
@@ -90,15 +97,105 @@ pub fn quote(
 					.map_err(|e| e.chain(#read_byte_err_msg))?
 				{
 					#( #recurse )*
-					_ => ::core::result::Result::Err(
-						<_ as ::core::convert::Into<_>>::into(#invalid_variant_err_msg)
-					),
+					_ => {
+						#[allow(clippy::redundant_closure_call)]
+						return (move || {
+							::core::result::Result::Err(
+								<_ as ::core::convert::Into<_>>::into(#invalid_variant_err_msg)
+							)
+						})();
+					},
 				}
 			}
 
 		},
 		Data::Union(_) => Error::new(Span::call_site(), "Union types are not supported.").to_compile_error(),
 	}
+}
+
+pub fn quote_decode_into(
+	data: &Data,
+	crate_path: &syn::Path,
+	input: &TokenStream,
+	attrs: &[syn::Attribute]
+) -> Option<TokenStream> {
+	// Make sure the type is `#[repr(transparent)]`, as this guarantees that
+	// there can be only one field that is not zero-sized.
+	if !crate::utils::is_transparent(attrs) {
+		return None;
+	}
+
+	let fields = match data {
+		Data::Struct(
+			syn::DataStruct {
+				fields: Fields::Named(syn::FieldsNamed { named: fields, .. }) |
+				        Fields::Unnamed(syn::FieldsUnnamed { unnamed: fields, .. }),
+				..
+			}
+		) => {
+			fields
+		},
+		_ => return None
+	};
+
+	if fields.is_empty() {
+		return None;
+	}
+
+	// Bail if there are any extra attributes which could influence how the type is decoded.
+	if fields.iter().any(|field|
+		utils::get_encoded_as_type(field).is_some() ||
+		utils::is_compact(field) ||
+		utils::should_skip(&field.attrs)
+	) {
+		return None;
+	}
+
+	// Go through each field and call `decode_into` on it.
+	//
+	// Normally if there's more than one field in the struct this would be incorrect,
+	// however since the struct's marked as `#[repr(transparent)]` we're guaranteed that
+	// there's at most one non zero-sized field, so only one of these `decode_into` calls
+	// should actually do something, and the rest should just be dummy calls that do nothing.
+	let mut decode_fields = Vec::new();
+	let mut sizes = Vec::new();
+	let mut non_zst_field_count = Vec::new();
+	for field in fields {
+		let field_type = &field.ty;
+		decode_fields.push(quote! {{
+			let dst_: &mut ::core::mem::MaybeUninit<Self> = dst_; // To make sure the type is what we expect.
+
+			// Here we cast `&mut MaybeUninit<Self>` into a `&mut MaybeUninit<#field_type>`.
+			//
+			// SAFETY: The struct is marked as `#[repr(transparent)]` so the address of every field will
+			//         be the same as the address of the struct itself.
+			let dst_: &mut ::core::mem::MaybeUninit<#field_type> = unsafe {
+				&mut *dst_.as_mut_ptr().cast::<::core::mem::MaybeUninit<#field_type>>()
+			};
+			<#field_type as #crate_path::Decode>::decode_into(#input, dst_)?;
+		}});
+
+		if !sizes.is_empty() {
+			sizes.push(quote! { + });
+		}
+		sizes.push(quote! { ::core::mem::size_of::<#field_type>() });
+
+		if !non_zst_field_count.is_empty() {
+			non_zst_field_count.push(quote! { + });
+		}
+		non_zst_field_count.push(quote! { if ::core::mem::size_of::<#field_type>() > 0 { 1 } else { 0 } });
+	}
+
+	Some(quote!{
+		// Just a sanity check. These should always be true and will be optimized-out.
+		::core::assert_eq!(#(#sizes)*, ::core::mem::size_of::<Self>());
+		::core::assert!(#(#non_zst_field_count)* <= 1);
+
+		#(#decode_fields)*
+
+		// SAFETY: We've successfully called `decode_into` for all of the fields.
+		unsafe { ::core::result::Result::Ok(#crate_path::DecodeFinished::assert_decoding_finished()) }
+	})
 }
 
 fn create_decode_expr(field: &Field, name: &str, input: &TokenStream, crate_path: &syn::Path) -> TokenStream {
@@ -169,7 +266,7 @@ fn create_instance(
 				let name_ident = &f.ident;
 				let field_name = match name_ident {
 					Some(a) => format!("{}::{}", name_str, a),
-					None => format!("{}", name_str), // Should never happen, fields are named.
+					None => name_str.to_string(), // Should never happen, fields are named.
 				};
 				let decode = create_decode_expr(f, &field_name, input, crate_path);
 
