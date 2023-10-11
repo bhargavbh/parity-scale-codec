@@ -1036,12 +1036,12 @@ mod tests {
 
 	#[cfg(kani)]
 	#[kani::proof]
-	#[kani::unwind(17)] //bytes_needed in the loop for encoding is bounded by 8
-		fn compact_128_encoding__bounded_loop_proof() {
-			let n: u128 = kani::any();
-			let encoded = Compact(n as u128).encode();
-			//assert_eq!(encoded.len(), l);
-			assert_eq!(Compact::compact_len(&n), encoded.len());
-			assert_eq!(<Compact<u128>>::decode(&mut &encoded[..]).unwrap().0, n);
-					
-		}
+	#[kani::unwind(17)] //bytes_needed in the loop for encoding is bounded by 16
+	fn compact_128_encoding__bounded_loop_proof() {
+		let n: u128 = kani::any();
+		let encoded = Compact(n as u128).encode();
+		//assert_eq!(encoded.len(), l);
+		assert_eq!(Compact::compact_len(&n), encoded.len());
+		assert_eq!(<Compact<u128>>::decode(&mut &encoded[..]).unwrap().0, n);			
+	}
+	
