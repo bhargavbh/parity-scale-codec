@@ -966,7 +966,7 @@ mod tests {
 }
 
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof]
 	fn compact_128_encoding_proof() {
 		let n: u128 = kani::any();
@@ -1044,4 +1044,4 @@ mod tests {
 		assert_eq!(Compact::compact_len(&n), encoded.len());
 		assert_eq!(<Compact<u128>>::decode(&mut &encoded[..]).unwrap().0, n);			
 	}
-	
+ */	

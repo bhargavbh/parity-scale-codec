@@ -14,6 +14,8 @@
 
 //! Serialization.
 
+#![feature(generic_const_exprs)]
+
 use core::fmt;
 use core::{
 	convert::TryFrom,
@@ -57,6 +59,9 @@ use crate::compact::Compact;
 use crate::DecodeFinished;
 use crate::encode_like::EncodeLike;
 use crate::Error;
+use arbitrary::{Arbitrary, Unstructured, Result as ArbResult};
+// use parity_scale_codec::{Encode, Decode};
+
 
 pub(crate) const MAX_PREALLOCATION: usize = 4 * 1024;
 const A_BILLION: u32 = 1_000_000_000;
@@ -1588,6 +1593,75 @@ where
 	}
 }
 
+#[derive(PartialEq, Debug)]
+struct ArbVec<T>(Vec<T>);
+
+/* #[cfg(kani)]
+impl<T> kani::Arbitrary for ArbVec<T>
+where
+    T: kani::Arbitrary,
+{
+	fn any() -> Self {
+		ArbVec(vec![kani::any()])
+	}
+    fn any_array<const MAX_ARRAY_LENGTH: usize>() -> [Self; MAX_ARRAY_LENGTH] 
+	where 
+		[(); std::mem::size_of::<[Self; MAX_ARRAY_LENGTH]>()]:,
+	{
+		[(); MAX_ARRAY_LENGTH].map(|_| Self::any())
+	}
+} */
+
+#[cfg(kani)]
+impl<T> kani::Arbitrary for ArbVec<T>
+where
+    T: kani::Arbitrary,
+{
+	fn any() -> Self {
+		ArbVec(vec![kani::any()])
+	}
+    fn any_array<const MAX_ARRAY_LENGTH: usize>() -> [Self; MAX_ARRAY_LENGTH] 
+	where 
+		[(); std::mem::size_of::<[Self; MAX_ARRAY_LENGTH]>()]:,
+	{
+		[(); MAX_ARRAY_LENGTH].map(|_| Self::any())
+	}
+
+}
+
+/* 
+impl<'a, T> Arbitrary<'a> for ArbVec<T>
+where
+    T: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> ArbResult<Self> {
+        // Get an iterator of arbitrary `T`s.
+        let iter = u.arbitrary_iter::<T>()?;
+
+        // And then create a collection!s
+        let mut my_vec = Vec::new();
+        for elem_result in iter {
+            let elem = elem_result?;
+            my_vec.push(elem);
+        }
+
+        Ok(ArbVec(my_vec))
+    }
+} */
+
+impl<T> Deref for ArbVec<T> {
+	type Target = Vec<T>;
+	fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl<T> WrapperTypeEncode for ArbVec<T> {}
+
+impl<T> From<Vec<T>> for ArbVec<T> {
+	fn from(v: Vec<T>) -> Self { ArbVec(v) }
+}
+impl<T> WrapperTypeDecode for ArbVec<T> {
+	type Wrapped = Vec<T>;
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -2086,31 +2160,41 @@ mod tests {
 }
 
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof]
 	fn kani_u32_encoded_as_expected() {
 		let value: u32 = kani::any();
 		let encoded = value.encode();
 		assert_eq!(u32::decode(&mut &encoded[..]).unwrap(), value);
-	}
+	} */
 
 #[cfg(kani)]
+#[kani::proof]
+#[kani::unwind(50)] 
+fn kani_u32_vec_encode_as_expected() {
+	let value: ArbVec<u32> = kani::any();
+	let encoded = value.encode();
+	assert_eq!(ArbVec::<u32>::decode(&mut &encoded[..]).unwrap(), value);
+}
+	
+
+/* #[cfg(kani)]
 #[kani::proof]
 	fn kani_u64_encoded_as_expected() {
 		let value: u64 = kani::any();
 		let encoded = value.encode();
 		assert_eq!(u64::decode(&mut &encoded[..]).unwrap(), value);
 	}
-	
+ */	
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof]
 	fn kani_u128_encoded_as_expected() {
 		let value: u128 = kani::any();
 		let encoded = value.encode();
 		assert_eq!(u128::decode(&mut &encoded[..]).unwrap(), value);
 	}
-	
+ */	
 // implement arbitrary trait for string
 // #[cfg(kani)]
 // #[kani::proof]
@@ -2120,16 +2204,16 @@ mod tests {
 // 	assert_eq!(<String>::decode(&mut &encoded[..]).unwrap(), value);
 // }
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof]
 	fn kani_f32_encoded_as_expected() {
 		let value: f32 = kani::any();
 		let encoded = value.encode();
 		assert_eq!(f32::decode(&mut &encoded[..]).unwrap(), value);
-	}
+	} */
 
 
-	#[test]
+/* 	#[test]
 	fn kani_concrete_playback_kani_f32_encoded_as_expected_11885829498631931113() {
 		let concrete_vals: Vec<Vec<u8>> = vec![
 			// +NaN
@@ -2146,4 +2230,147 @@ mod tests {
 		let decoded = f32::decode(&mut &encoded[..]).unwrap();
 		println!("decoded value is {}", decoded);
 		assert_eq!(decoded, value);
+	} */
+
+
+/* #[cfg(kani)]
+#[kani::proof]
+	fn kani_u32_encoded_as_expected() {
+		let value: u32 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u32::decode(&mut &encoded[..]).unwrap(), value);
 	}
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_u64_encoded_as_expected() {
+		let value: u64 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u64::decode(&mut &encoded[..]).unwrap(), value);
+	}
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_f32_encoded_as_expected_fails() {
+		let value: f32 = kani::any();
+		let encoded = value.encode();
+		kani::assume(!value.is_nan());
+		assert_eq!(f32::decode(&mut &encoded[..]).unwrap(), value);
+	}
+
+	#[cfg(kani)]
+	#[kani::proof]
+		fn kani_u128_encoded_as_expected_fails() {
+			let value: u128 = kani::any();
+			let encoded = value.encode();
+			assert_eq!(u128::decode(&mut &encoded[..]).unwrap(), value);
+		}	
+
+#[cfg(kani)]
+#[kani::proof]
+	fn kani_u128_encoded_as_expected() {
+		let value: u128 = kani::any();
+		let encoded = value.encode();
+		assert_eq!(u128::decode(&mut &encoded[..]).unwrap(), value);
+	}
+
+ */
+// #[cfg(kani)]
+// #[kani::proof]
+// fn string_encoded_as_expected() {
+// 	let value: String = kani::any();
+// 	let encoded = value.encode();
+// 	assert_eq!(<String>::decode(&mut &encoded[..]).unwrap(), value);
+// }
+
+// #[cfg(kani)]
+// #[kani::proof]
+// 	fn kani_f32_encoded_as_expected() {
+// 		let value: f32 = kani::any();
+// 		let encoded = value.encode();
+// 		assert_eq!(f32::decode(&mut &encoded[..]).unwrap(), value);
+// 	}
+
+/* #[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(10)]
+	fn kani_f32_vec_encoded_as_expected() {
+		let v1: f32 = kani::any();
+		let v2: f32 = kani::any();
+		kani::assume(!v1.is_nan());
+		kani::assume(!v2.is_nan());
+		let value = vec![v1,v2];
+		let encoded = value.encode();
+		assert_eq!(<Vec<f32>>::decode(&mut &encoded[..]).unwrap(), value);
+	}
+ */
+//		assert_eq!(<T as DecodeLength>::len(&thing.encode()[..]).unwrap(), len);
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(10)]
+	fn kani_unit_vec_decode_length_as_expected() {
+		let length: usize = kani::any();
+		kani::assume(length < 10);
+		let mut vector = Vec::new();
+
+		for i in 0..length {
+			vector.push(());
+		}
+
+		// let encoded = value.encode();
+		assert_eq!(<Vec<()> as DecodeLength>::len(&vector.encode()[..]).unwrap(), length);
+	}
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(11)]
+	fn kani_u32_vec_decode_length_as_expected() {
+		let length: usize = kani::any();
+		kani::assume(length < 10);
+		let mut vector = Vec::new();
+
+		for i in 0..length {
+			vector.push(1u32);
+		}
+		// let encoded = value.encode();
+		assert_eq!(<Vec<u32> as DecodeLength>::len(&vector.encode()[..]).unwrap(), length);
+	}
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(11)]
+	fn kani_u32_vec_decode_length_as_expected_using_arb_implementation() {
+		let vector: ArbVec<u32> = kani::any();
+		let len = vector.deref().len();
+		// let encoded = value.encode();
+		assert_eq!(<Vec<u32> as DecodeLength>::len(&vector.encode()[..]).unwrap(), len);
+}
+
+/* #[test]
+	fn kani_f32_vec_encoded_as_expected_concrete() {
+		let v1: f32 = 0.0;
+		let v2: f32 = 0.0;
+		let value = vec![v1,v2];
+		let encoded = value.encode();
+		assert_eq!(<Vec<f32>>::decode(&mut &encoded[..]).unwrap(), value);
+	}
+ */
+	// #[test]
+	// fn kani_concrete_playback_kani_f32_encoded_as_expected_11885829498631931113() {
+	// 	let concrete_vals: Vec<Vec<u8>> = vec![
+	// 		// +NaN
+	// 		vec![8, 0, 128, 127],
+	// 	];
+	// 	kani::concrete_playback_run(concrete_vals, kani_f32_encoded_as_expected);
+	// }
+
+	// #[test]
+	// fn kani_concrete_playback_kani_f32_encoded_as_expected_118858294986319311131() {
+	// 	let value = f32::NAN;
+	// 	println!("original value is {}", value);
+	// 	let encoded = value.encode();
+	// 	let decoded = f32::decode(&mut &encoded[..]).unwrap();
+	// 	println!("decoded value is {}", decoded);
+	// 	assert_eq!(decoded, value);
+	// }

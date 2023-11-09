@@ -41,7 +41,7 @@ default = ["std"]
 derive = ["parity-scale-codec-derive"]
 std = ["serde/std", "bitvec?/std", "byte-slice-cast/std", "chain-error"]
 bit-vec = ["bitvec"]
-fuzz = ["std", "arbitrary"]
+fuzz = ["std"]
 
 # Enables the new `MaxEncodedLen` trait.
 # NOTE: This is still considered experimental and is exempt from the usual
@@ -52,7 +52,7 @@ max-encoded-len = ["parity-scale-codec-derive?/max-encoded-len"]
 # Should not be used in a constrained environment.
 chain-error = []
 
-# This does not do anthing anymore. Remove with the next major release.
+# This does not do anything anymore. Remove with the next major release.
 full = []
 
 [workspace]
