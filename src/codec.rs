@@ -14,17 +14,13 @@
 
 //! Serialization.
 
-#![feature(generic_const_exprs)]
-
 use core::fmt;
 use core::{
 	convert::TryFrom,
 	iter::FromIterator,
 	marker::PhantomData,
 	mem,
-	mem::{
-		MaybeUninit,
-	},
+	mem::MaybeUninit,
 	ops::{Deref, Range, RangeInclusive},
 	time::Duration,
 };
@@ -486,7 +482,9 @@ impl Decode for bytes::Bytes {
 impl<T, X> Encode for X where
 	T: Encode + ?Sized,
 	X: WrapperTypeEncode<Target = T>,
-{
+{	
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
+
 	fn size_hint(&self) -> usize {
 		(**self).size_hint()
 	}
@@ -600,7 +598,8 @@ impl<T> WrapperTypeDecode for Arc<T> {
 impl<T, X> Decode for X where
 	T: Decode + Into<X>,
 	X: WrapperTypeDecode<Wrapped=T>,
-{
+{	
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	#[inline]
 	fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
 		Self::decode_wrapped(input)
@@ -640,6 +639,7 @@ pub trait EncodeAsRef<'a, T: 'a> {
 }
 
 impl<T: Encode, E: Encode> Encode for Result<T, E> {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn size_hint(&self) -> usize {
 		1 + match *self {
 			Ok(ref t) => t.size_hint(),
@@ -670,6 +670,7 @@ where
 {}
 
 impl<T: Decode, E: Decode> Decode for Result<T, E> {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
 		match input.read_byte()
 			.map_err(|e| e.chain("Could not result variant byte for `Result`"))?
@@ -696,6 +697,7 @@ impl fmt::Debug for OptionBool {
 }
 
 impl Encode for OptionBool {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn size_hint(&self) -> usize {
 		1
 	}
@@ -712,6 +714,7 @@ impl Encode for OptionBool {
 impl EncodeLike for OptionBool {}
 
 impl Decode for OptionBool {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
 		match input.read_byte()? {
 			0 => Ok(OptionBool(None)),
@@ -725,6 +728,7 @@ impl Decode for OptionBool {
 impl<T: EncodeLike<U>, U: Encode> EncodeLike<Option<U>> for Option<T> {}
 
 impl<T: Encode> Encode for Option<T> {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn size_hint(&self) -> usize {
 		1 + match *self {
 			Some(ref t) => t.size_hint(),
@@ -744,6 +748,7 @@ impl<T: Encode> Encode for Option<T> {
 }
 
 impl<T: Decode> Decode for Option<T> {
+	const TYPE_INFO: TypeInfo = TypeInfo::Unknown;
 	fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
 		match input.read_byte()
 			.map_err(|e| e.chain("Could not decode variant byte for `Option`"))?
@@ -1594,7 +1599,15 @@ where
 }
 
 #[derive(PartialEq, Debug)]
-struct ArbVec<T>(Vec<T>);
+struct ArbVec<T>{
+	vec: Vec<T>
+}
+
+impl<T> ArbVec<T> {
+	fn get(&self) -> &Vec<T> {
+		&self.vec 
+	}
+}
 
 /* #[cfg(kani)]
 impl<T> kani::Arbitrary for ArbVec<T>
@@ -1618,8 +1631,13 @@ where
     T: kani::Arbitrary,
 {
 	fn any() -> Self {
-		ArbVec(vec![kani::any()])
+		let mut result = Vec::new();
+		for i in 0..10 {
+			result.push(kani::any());
+		}
+		ArbVec{vec: result}
 	}
+
     fn any_array<const MAX_ARRAY_LENGTH: usize>() -> [Self; MAX_ARRAY_LENGTH] 
 	where 
 		[(); std::mem::size_of::<[Self; MAX_ARRAY_LENGTH]>()]:,
@@ -1651,12 +1669,12 @@ where
 
 impl<T> Deref for ArbVec<T> {
 	type Target = Vec<T>;
-	fn deref(&self) -> &Self::Target { &self.0 }
+	fn deref(&self) -> &Self::Target { &self.vec}
 }
 impl<T> WrapperTypeEncode for ArbVec<T> {}
 
 impl<T> From<Vec<T>> for ArbVec<T> {
-	fn from(v: Vec<T>) -> Self { ArbVec(v) }
+	fn from(v: Vec<T>) -> Self { ArbVec{vec: v} }
 }
 impl<T> WrapperTypeDecode for ArbVec<T> {
 	type Wrapped = Vec<T>;
@@ -2291,22 +2309,19 @@ fn kani_u32_vec_encode_as_expected() {
 // 		assert_eq!(f32::decode(&mut &encoded[..]).unwrap(), value);
 // 	}
 
-/* #[cfg(kani)]
+#[cfg(kani)]
 #[kani::proof] 
-#[kani::unwind(10)]
-	fn kani_f32_vec_encoded_as_expected() {
-		let v1: f32 = kani::any();
-		let v2: f32 = kani::any();
-		kani::assume(!v1.is_nan());
-		kani::assume(!v2.is_nan());
-		let value = vec![v1,v2];
-		let encoded = value.encode();
-		assert_eq!(<Vec<f32>>::decode(&mut &encoded[..]).unwrap(), value);
-	}
- */
+#[kani::unwind(20)]
+fn kani_u32_vec_encoded_as_expected() {
+	let test_arb_vector: ArbVec<u32> = kani::any();
+	let test_vector = test_arb_vector.vec;
+	let encoded = test_vector.encode();
+	assert_eq!(<Vec<u32>>::decode(&mut &encoded[..]).unwrap(), test_vector);
+}
+
 //		assert_eq!(<T as DecodeLength>::len(&thing.encode()[..]).unwrap(), len);
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof] 
 #[kani::unwind(10)]
 	fn kani_unit_vec_decode_length_as_expected() {
@@ -2314,15 +2329,15 @@ fn kani_u32_vec_encode_as_expected() {
 		kani::assume(length < 10);
 		let mut vector = Vec::new();
 
-		for i in 0..length {
+		for _i in 0..length {
 			vector.push(());
 		}
 
 		// let encoded = value.encode();
 		assert_eq!(<Vec<()> as DecodeLength>::len(&vector.encode()[..]).unwrap(), length);
-	}
+	} */
 
-#[cfg(kani)]
+/* #[cfg(kani)]
 #[kani::proof] 
 #[kani::unwind(11)]
 	fn kani_u32_vec_decode_length_as_expected() {
@@ -2330,19 +2345,20 @@ fn kani_u32_vec_encode_as_expected() {
 		kani::assume(length < 10);
 		let mut vector = Vec::new();
 
-		for i in 0..length {
+		for _i in 0..length {
 			vector.push(1u32);
 		}
 		// let encoded = value.encode();
 		assert_eq!(<Vec<u32> as DecodeLength>::len(&vector.encode()[..]).unwrap(), length);
-	}
+	} */
 
 #[cfg(kani)]
 #[kani::proof] 
 #[kani::unwind(11)]
 	fn kani_u32_vec_decode_length_as_expected_using_arb_implementation() {
-		let vector: ArbVec<u32> = kani::any();
-		let len = vector.deref().len();
+		let vector: ArbVec<u32> = kani::any::<ArbVec<u32>>();
+		println!("{:?}", vector);
+		let len = vector.vec.len();
 		// let encoded = value.encode();
 		assert_eq!(<Vec<u32> as DecodeLength>::len(&vector.encode()[..]).unwrap(), len);
 }
@@ -2374,3 +2390,12 @@ fn kani_u32_vec_encode_as_expected() {
 	// 	println!("decoded value is {}", decoded);
 	// 	assert_eq!(decoded, value);
 	// }
+
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(11)]
+	fn kani_dummy_test_arb_vec() {
+		let arb_vector: ArbVec<u32> = kani::any();
+		assert_eq!(arb_vector.vec.len(), 5);
+}
