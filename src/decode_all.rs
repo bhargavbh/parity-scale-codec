@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Decode, Error};
+use crate::{Decode, Encode, Error};
+use crate::codec::{ArbVec};
 
 /// The error message returned when `decode_all` fails.
 pub(crate) const DECODE_ALL_ERR_MSG: &str = "Input buffer has still data left after decoding!";
@@ -108,4 +109,29 @@ mod tests {
 			TestStruct => TestStruct { data: vec![1, 2, 4, 5, 6], other: 45, compact: Compact(123234545) };
 		}
 	}
+}
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(50)]
+fn kani_u32_vec_decode_all_eq_decode() {
+    use crate::decode_all;
+
+	let test_arb_vector: ArbVec<u32> = kani::any();
+	let test_vector = test_arb_vector.vec;
+	let encoded = test_vector.encode();
+	assert_eq!(<Vec<u32>>::decode(&mut &encoded[..]).unwrap(), <Vec<u32>>::decode_all(&mut &encoded[..]).unwrap());
+}
+
+
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(20)]
+fn kani_f32_vec_decode_all_eq_decode() {
+    use crate::decode_all;
+
+	let test_arb_vector: ArbVec<f32> = kani::any();
+	let test_vector = test_arb_vector.vec;
+	let encoded = test_vector.encode();
+	assert_eq!(<Vec<f32>>::decode(&mut &encoded[..]).unwrap(), <Vec<f32>>::decode_all(&mut &encoded[..]).unwrap());
 }

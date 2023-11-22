@@ -55,7 +55,8 @@ use crate::compact::Compact;
 use crate::DecodeFinished;
 use crate::encode_like::EncodeLike;
 use crate::Error;
-use arbitrary::{Arbitrary, Unstructured, Result as ArbResult};
+use kani::arbitrary;
+//use arbitrary::{Arbitrary, Unstructured, Result as ArbResult};
 // use parity_scale_codec::{Encode, Decode};
 
 
@@ -1599,8 +1600,8 @@ where
 }
 
 #[derive(PartialEq, Debug)]
-struct ArbVec<T>{
-	vec: Vec<T>
+pub struct ArbVec<T>{
+	pub vec: Vec<T>
 }
 
 impl<T> ArbVec<T> {
@@ -1632,7 +1633,9 @@ where
 {
 	fn any() -> Self {
 		let mut result = Vec::new();
-		for i in 0..10 {
+		let length: usize = kani::any();
+		kani::assume(length <5);
+		for i in 0..length {
 			result.push(kani::any());
 		}
 		ArbVec{vec: result}
@@ -2311,7 +2314,7 @@ fn kani_u32_vec_encode_as_expected() {
 
 #[cfg(kani)]
 #[kani::proof] 
-#[kani::unwind(20)]
+#[kani::unwind(50)]
 fn kani_u32_vec_encoded_as_expected() {
 	let test_arb_vector: ArbVec<u32> = kani::any();
 	let test_vector = test_arb_vector.vec;
@@ -2357,7 +2360,6 @@ fn kani_u32_vec_encoded_as_expected() {
 #[kani::unwind(11)]
 	fn kani_u32_vec_decode_length_as_expected_using_arb_implementation() {
 		let vector: ArbVec<u32> = kani::any::<ArbVec<u32>>();
-		println!("{:?}", vector);
 		let len = vector.vec.len();
 		// let encoded = value.encode();
 		assert_eq!(<Vec<u32> as DecodeLength>::len(&vector.encode()[..]).unwrap(), len);
@@ -2399,3 +2401,18 @@ fn kani_u32_vec_encoded_as_expected() {
 		let arb_vector: ArbVec<u32> = kani::any();
 		assert_eq!(arb_vector.vec.len(), 5);
 }
+
+/* 
+#[cfg(kani)]
+#[kani::proof] 
+#[kani::unwind(50)]
+fn kani_u32_vec_decode_all_eq_decode() {
+    use crate::decode_all;
+
+	let test_arb_vector: ArbVec<u32> = kani::any();
+	let test_vector = test_arb_vector.vec;
+	let encoded = test_vector.encode();
+	assert_eq!(<Vec<u32>>::decode(&mut &encoded[..]).unwrap(), <Vec<u32>>::decode_all(&mut &encoded[..]).unwrap());
+}
+ */
+
